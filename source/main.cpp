@@ -23,49 +23,41 @@ typedef struct{
   unsigned evals;
 } LSresult;
 
-//std::vector<double> v;
-//double *a = &v[0]; or
-//double *a = v.data()
-//result = mts_ls1_improve_dim(bench, sol, best_fitness, i, SR);
+unsigned dim = 1000;
 
 LSresult mts_ls1_improve_dim(Benchmarks * bench, vector<double>& sol, double best_fitness, unsigned i, vector<double> & SR ){
-    vector<double> newsol = sol;
-    newsol[i] -= SR[i];
+  vector<double> newsol = sol;
+  newsol[i] -= SR[i];
 
-    double initial_fit = best_fitness;
+  double initial_fit = best_fitness;
 
-    if( newsol[i] > bench->getMaxX() )
-        newsol[i] = bench->getMaxX();
+  newsol[i] = min(newsol[i], (double)bench->getMaxX());
+  newsol[i] = max(newsol[i], (double)bench->getMinX());
 
-    if( newsol[i] < bench->getMinX() )
-        newsol[i] = bench->getMinX();
+  double fitness_newsol = bench->compute(newsol.data());
 
-    double fitness_newsol = bench->compute(newsol.data());
-    unsigned evals = 1;
+  unsigned evals = 1;
+
+  if( fitness_newsol < best_fitness ){
+    best_fitness = fitness_newsol;
+    sol = newsol;
+  } else if( fitness_newsol > best_fitness ){
+    newsol[i] = sol[i];
+    newsol[i] += 0.5 * SR[i];
+
+    newsol[i] = min(newsol[i], (double)bench->getMaxX());
+    newsol[i] = max(newsol[i], (double)bench->getMinX());
+
+    fitness_newsol = bench->compute(newsol.data());
+    evals++;
 
     if( fitness_newsol < best_fitness ){
       best_fitness = fitness_newsol;
       sol = newsol;
-    } else if( fitness_newsol > best_fitness ){
-      newsol[i] = sol[i];
-      newsol[i] += 0.5 * SR[i];
-
-      if( newsol[i] > bench->getMaxX() )
-          newsol[i] = bench->getMaxX();
-
-      if( newsol[i] < bench->getMinX() )
-          newsol[i] = bench->getMinX();
-
-      fitness_newsol = bench->compute(newsol.data());
-      evals += 1;
-
-      if( fitness_newsol < best_fitness ){
-        best_fitness = fitness_newsol;
-        sol = newsol;
-      }
     }
-    printf("%1.20E -> %1.20E\n", initial_fit, best_fitness);
-    return LSresult{sol, best_fitness, evals};
+  }
+  //printf("%1.20E -> %1.20E\n", initial_fit, best_fitness);
+  return LSresult{sol, best_fitness, evals};
 }
 
 void mts_ls1(Benchmarks * bench, unsigned maxevals, vector<double>& sol){
@@ -75,15 +67,15 @@ void mts_ls1(Benchmarks * bench, unsigned maxevals, vector<double>& sol){
 
   vector<double> SR(sol.size());
   for( unsigned i = 0; i < SR.size(); i++ ){
-      SR[i] = (bench->getMaxX() - bench->getMinX()) * 0.4;
+    SR[i] = (bench->getMaxX() - bench->getMinX()) * 0.4;
   }
 
   LSresult result;
   LSresult current_best = {sol, best_fitness, 0};
 
-  vector<double> improvement(1000, 0.0);
+  vector<double> improvement(dim, 0.0);
 
-  vector<double> dim_sorted(1000);
+  vector<double> dim_sorted(dim);
   iota(dim_sorted.begin(), dim_sorted.end(), 0);
 
   double improve;
@@ -97,7 +89,7 @@ void mts_ls1(Benchmarks * bench, unsigned maxevals, vector<double>& sol){
       improvement[*it] = improve;
 
       if( improve > 0.0 ){
-        //printf("[1] %.10lf > %.10lf ~ improve: %.20lf\n", current_best.fitness, result.fitness, improve);
+        printf("[1] %.10lf > %.10lf ~ improve: %.20lf\n", current_best.fitness, result.fitness, improve);
         current_best = result;
       } else {
         SR[*it] /= 2.0f;
@@ -106,31 +98,31 @@ void mts_ls1(Benchmarks * bench, unsigned maxevals, vector<double>& sol){
   }
 
   iota(dim_sorted.begin(), dim_sorted.end(), 0);
-  std::sort(dim_sorted.begin(), dim_sorted.end(), [&](unsigned i1, unsigned i2) { return improvement[i1] > improvement[i2]; });
-  int i, d = 0, next_d, next_i;
+  sort(dim_sorted.begin(), dim_sorted.end(), [&](unsigned i1, unsigned i2) { return improvement[i1] > improvement[i2]; });
 
+  int i, d = 0, next_d, next_i;
   while( totalevals < maxevals ){
     i = dim_sorted[d];
     result = mts_ls1_improve_dim(bench, current_best.solution, current_best.fitness, i, SR);
     totalevals += result.evals;
     improve = max(current_best.fitness - result.fitness, 0.0);
     improvement[i] = improve;
-    next_d = (d+1)%1000;
+    next_d = (d+1)%dim;
     next_i = dim_sorted[next_d];
 
     if( improve > 0.0 ){
-      //printf("[2] %.10lf > %.10lf ~ improve: %.20lf\n", current_best.fitness, result.fitness, improve);
+      printf("[2] %.10lf > %.10lf ~ improve: %.20lf\n", current_best.fitness, result.fitness, improve);
       current_best = result;
 
       if( improvement[i] < improvement[next_i] ){
         iota(dim_sorted.begin(), dim_sorted.end(), 0);
-        std::sort(dim_sorted.begin(), dim_sorted.end(), [&](unsigned i1, unsigned i2) { return improvement[i1] > improvement[i2]; });
+        sort(dim_sorted.begin(), dim_sorted.end(), [&](unsigned i1, unsigned i2) { return improvement[i1] > improvement[i2]; });
       }
     } else {
       SR[i] /= 2.0;
       d = next_d;
       if( SR[i] < 1e-15 ){
-       SR[i] = (bench->getMaxX() - bench->getMinX()) * 0.4;
+        SR[i] = (bench->getMaxX() - bench->getMinX()) * 0.4;
       }
     }
   }
@@ -138,10 +130,8 @@ void mts_ls1(Benchmarks * bench, unsigned maxevals, vector<double>& sol){
 }
 
 int main(){
-/*  Test the basic benchmark function */
-  Benchmarks * fp=NULL;
-  unsigned dim = 1000;
-
+  /*  Test the basic benchmark function */
+  Benchmarks * fp = NULL;
   vector<double> runTimeVec;
   struct timeval start, end;
   long seconds, useconds;
@@ -171,7 +161,7 @@ int main(){
   runTimeVec.push_back(mtime);
   printf ( "F %d, Running Time = %f s\n\n", fp->getID(), mtime);
 
-  mts_ls1(fp, 3e6, sol);
+  mts_ls1(fp, 1e6, sol);
 
   printf("F %d value = %1.20E\n", fp->getID(), fp->compute(sol.data()));
 

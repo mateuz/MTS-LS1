@@ -5,7 +5,7 @@ SRCS = $(wildcard $(SRC_PATH)/*.cpp)
 
 OBJS = $(patsubst %.cpp, $(OBJ_PATH)/%.o, $(notdir $(SRCS)))
 
-CC = g++ -Wall -pedantic -std=c++0x  -ggdb -DDEBUG
+CC = g++ -Wall -pedantic -std=c++11 -ggdb -DDEBUG
 
 all: mts-app
 
